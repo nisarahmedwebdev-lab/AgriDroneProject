@@ -1,0 +1,61 @@
+{
+  "name": "Pond Farm Layout",
+  "crop_type": "Cotton",
+  "grid_configuration": {
+    "rows": 25,
+    "cols": 25,
+    "drone_start": [
+      0,
+      0
+    ]
+  },
+  "obstacles": [
+    [
+      10,
+      10
+    ],
+    [
+      10,
+      11
+    ],
+    [
+      11,
+      10
+    ],
+    [
+      11,
+      11
+    ],
+    [
+      12,
+      10
+    ],
+    [
+      10,
+      12
+    ]
+  ],
+  "disease_seeds": [
+    {
+      "cell": [
+        5,
+        5
+      ],
+      "type": "early"
+    },
+    {
+      "cell": [
+        18,
+        3
+      ],
+      "type": "severe"
+    },
+    {
+      "cell": [
+        3,
+        18
+      ],
+      "type": "early"
+    }
+  ]
+}
