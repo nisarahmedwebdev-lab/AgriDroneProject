@@ -15,13 +15,13 @@ import joblib
 # Import modules
 from config import GRID_SIZE
 from core_logic import run_scan
-from llm_handler import init_gemini, generate_report, get_spray_advice
+from llm_handler import initialize_openai, generate_report, get_spray_advice
 
 # Page configuration
 st.set_page_config(
     page_title="AgriDrone - Crop Disease Monitor",
     layout="wide",
-    page_icon=":seedling:"
+    page_icon="🚁"
 )
 
 # Custom CSS for better styling
@@ -182,7 +182,7 @@ def create_heatmap(results):
             val = results[r, c]
             hover_text[r, c] = f"Row: {r}<br>Col: {c}<br>Status: {class_names.get(val, 'Unknown')}"
     
-    # Create heatmap using go.Heatmap instead of px.imshow
+    # Create heatmap using go.Heatmap
     fig = go.Figure(data=go.Heatmap(
         z=numeric_data,
         colorscale=[
@@ -278,21 +278,21 @@ def display_metrics(metrics):
     
     with col1:
         st.metric(
-            label="Cells Scanned",
+            label="📊 Cells Scanned",
             value=metrics['scanned'],
             delta=f"{metrics['scanned']}/{metrics['total_cells']} cells"
         )
     
     with col2:
         st.metric(
-            label="Healthy",
+            label="🟢 Healthy",
             value=metrics['healthy'],
             delta=f"{metrics['healthy_pct']:.1f}%"
         )
     
     with col3:
         st.metric(
-            label="Early Disease",
+            label="🟡 Early Disease",
             value=metrics['early'],
             delta=f"{metrics['early_pct']:.1f}%",
             delta_color="inverse"
@@ -300,7 +300,7 @@ def display_metrics(metrics):
     
     with col4:
         st.metric(
-            label="Severe Disease",
+            label="🔴 Severe Disease",
             value=metrics['severe'],
             delta=f"{metrics['severe_pct']:.1f}%",
             delta_color="inverse"
@@ -312,16 +312,16 @@ def main():
     clf = load_model()
     
     # Title in main area
-    st.markdown('<p class="main-header">Agricultural Drone - Crop Disease Monitor</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-header">🚁 Agricultural Drone - Crop Disease Monitor</p>', unsafe_allow_html=True)
     
     # SIDEBAR
     with st.sidebar:
-        st.markdown("### AgriDrone Controls")
+        st.markdown("### 🌱 AgriDrone Controls")
         st.markdown("---")
         
         # Crop selection
         crop_type = st.selectbox(
-            "Crop Type",
+            "🌾 Crop Type",
             ["Wheat", "Cotton", "Rice", "Sugarcane"],
             index=0,
             help="Select the crop type for NDVI threshold adjustment"
@@ -331,14 +331,14 @@ def main():
         # Field selection
         field_options = load_field_options()
         field_choice = st.selectbox(
-            "Field Layout",
+            "🗺️ Field Layout",
             field_options,
             help="Select a pre-configured field layout"
         )
         
         # File uploader
         uploaded_file = st.file_uploader(
-            "Upload Custom Field",
+            "📤 Upload Custom Field",
             type=["json"],
             help="Upload a JSON file with custom field configuration"
         )
@@ -356,9 +356,9 @@ def main():
                 st.session_state.field_data = field_data
                 st.session_state.field_name = field_data.get('name', 'Custom Field')
                 st.session_state.crop_type = field_data.get('crop_type', crop_type)
-                st.success(f"Loaded: {st.session_state.field_name}")
+                st.success(f"✅ Loaded: {st.session_state.field_name}")
             except Exception as e:
-                st.error(f"Error loading file: {e}")
+                st.error(f"❌ Error loading file: {e}")
         elif field_choice and field_choice not in ["No fields found. Please upload a JSON file."]:
             # Load selected field
             try:
@@ -377,20 +377,20 @@ def main():
                     st.session_state.field_name = field_data.get('name', field_choice)
                     st.session_state.crop_type = field_data.get('crop_type', crop_type)
             except Exception as e:
-                st.error(f"Error loading field: {e}")
+                st.error(f"❌ Error loading field: {e}")
         
         st.markdown("---")
         
         # Display current field info
         if st.session_state.field_data:
-            st.caption(f"Current Field: {st.session_state.field_name}")
-            st.caption(f"Crop: {st.session_state.crop_type}")
+            st.caption(f"📍 Current Field: {st.session_state.field_name}")
+            st.caption(f"🌾 Crop: {st.session_state.crop_type}")
         
         st.markdown("---")
         
         # Disease spread steps
         spread_steps = st.slider(
-            "Disease Spread Steps",
+            "🔄 Disease Spread Steps",
             min_value=0,
             max_value=10,
             value=5,
@@ -401,36 +401,36 @@ def main():
         
         # Run button
         run_clicked = st.button(
-            "Run Drone Scan",
+            "▶️ Run Drone Scan",
             type="primary",
-            use_container_width=True,
+            width='stretch',
             disabled=clf is None
         )
         
         st.markdown("---")
         
-        # Gemini API status
-        api_key = os.getenv('GEMINI_API_KEY')
-        if api_key and init_gemini(api_key):
-            st.caption("Gemini: Connected")
+        # API status
+        api_ok = initialize_openai()
+        if api_ok:
+            st.success("✅ Groq/OpenAI: Connected")
         else:
-            st.caption("Gemini: Not configured")
-            st.caption("Set GEMINI_API_KEY in .env file")
+            st.warning("⚠️ API: Not configured")
+            st.caption("Set GROQ_API_KEY or OPENAI_API_KEY in .env file")
     
     # MAIN AREA
     
     # Check if field is loaded
     if st.session_state.field_data is None:
-        st.info("Load a field from the sidebar and click 'Run Drone Scan' to start.")
+        st.info("📋 Load a field from the sidebar and click '▶️ Run Drone Scan' to start.")
         
-        with st.expander("How it works"):
+        with st.expander("📖 How it works"):
             st.markdown("""
-            **AgriDrone simulates an agricultural drone scanning a 25x25 farm grid:**
+            **🚁 AgriDrone simulates an agricultural drone scanning a 25x25 farm grid:**
             
-            1. Boustrophedon Path - Drone follows a lawnmower pattern
-            2. Disease Detection - Random Forest classifier analyzes NDVI values
-            3. Visualization - Interactive heatmap shows disease status
-            4. AI Reports - Gemini generates agronomist recommendations
+            1. **🗺️ Boustrophedon Path** - Drone follows a lawnmower pattern
+            2. **🔬 Disease Detection** - Random Forest classifier analyzes NDVI values
+            3. **📊 Visualization** - Interactive heatmap shows disease status
+            4. **🤖 AI Reports** - Gemini/Groq generates agronomist recommendations
             
             Get started: Select a field layout and click Run!
             """)
@@ -438,14 +438,14 @@ def main():
     
     # Run scan if button clicked
     if run_clicked and clf is not None:
-        with st.spinner("Drone scanning field..."):
+        with st.spinner("🔄 Drone scanning field..."):
             progress_bar = st.progress(0, text="Starting scan...")
             status_text = st.empty()
             
             def update_progress(progress):
                 progress_bar.progress(progress, text=f"Scanning... {int(progress * 100)}%")
                 if progress > 0.5:
-                    status_text.info(f"Analyzing disease patterns... {int(progress * 100)}%")
+                    status_text.info(f"🔍 Analyzing disease patterns... {int(progress * 100)}%")
             
             try:
                 scan_results = run_scan(
@@ -463,11 +463,11 @@ def main():
                 progress_bar.empty()
                 status_text.empty()
                 
-                st.success("Scan complete! Results displayed below.")
+                st.success("✅ Scan complete! Results displayed below.")
                 st.balloons()
                 
             except Exception as e:
-                st.error(f"Error during scan: {e}")
+                st.error(f"❌ Error during scan: {e}")
                 import traceback
                 st.code(traceback.format_exc())
                 return
@@ -485,25 +485,25 @@ def main():
         col_grid, col_legend = st.columns([2, 1])
         
         with col_grid:
-            st.subheader("Field Health Map")
+            st.subheader("🗺️ Field Health Map")
             fig = create_heatmap(results['results'])
-            st.plotly_chart(fig, use_container_width=True, key="heatmap")
+            st.plotly_chart(fig, width='stretch', key="heatmap")
         
         with col_legend:
-            st.subheader("Legend")
+            st.subheader("📖 Legend")
             for status, color in [
-                ("Healthy", "#2ecc71"),
-                ("Early Disease", "#f1c40f"),
-                ("Severe Disease", "#e74c3c"),
-                ("Obstacle", "#34495e"),
-                ("Unscanned", "#ecf0f1")
+                ("🟢 Healthy", "#2ecc71"),
+                ("🟡 Early Disease", "#f1c40f"),
+                ("🔴 Severe Disease", "#e74c3c"),
+                ("⬛ Obstacle", "#34495e"),
+                ("⬜ Unscanned", "#ecf0f1")
             ]:
                 st.markdown(f'<span style="display:inline-block; width:20px; height:20px; background-color:{color}; border-radius:4px;"></span> {status}', unsafe_allow_html=True)
             
             st.divider()
-            st.markdown("**NDVI Color Scale**")
-            st.caption("Higher values (green) = Healthier crops")
-            st.caption("Lower values (red) = Disease stress")
+            st.markdown("**📊 NDVI Color Scale**")
+            st.caption("🟢 Higher values = Healthier crops")
+            st.caption("🔴 Lower values = Disease stress")
         
         st.divider()
         
@@ -512,21 +512,21 @@ def main():
         
         with col_pie:
             pie_fig = create_pie_chart(metrics)
-            st.plotly_chart(pie_fig, use_container_width=True)
+            st.plotly_chart(pie_fig, width='stretch')
         
         with col_bar:
             bar_fig = create_bar_chart(metrics)
-            st.plotly_chart(bar_fig, use_container_width=True)
+            st.plotly_chart(bar_fig, width='stretch')
         
         # Section 4: AI Field Report
         st.divider()
-        st.subheader("AI Field Report")
+        st.subheader("🤖 AI Field Report")
         
         col_report, col_actions = st.columns([3, 1])
         
         with col_actions:
-            report_btn = st.button("Generate Report", use_container_width=True)
-            spray_btn = st.button("Get Spray Advice", use_container_width=True)
+            report_btn = st.button("📄 Generate Report", width='stretch')
+            spray_btn = st.button("💊 Get Spray Advice", width='stretch')
             
             if metrics:
                 df = pd.DataFrame({
@@ -542,25 +542,26 @@ def main():
                 })
                 csv = df.to_csv(index=False)
                 st.download_button(
-                    label="Download CSV",
+                    label="⬇️ Download CSV",
                     data=csv,
                     file_name=f"field_report_{st.session_state.field_name}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width='stretch'
                 )
         
         with col_report:
             if report_btn:
-                with st.spinner("Generating report with Gemini..."):
+                with st.spinner("🤖 Generating report with AI..."):
                     report_text = generate_report(
                         metrics=metrics,
                         crop_type=st.session_state.crop_type,
-                        field_name=st.session_state.field_name
+                        field_name=st.session_state.field_name,
+                        disease_seeds=st.session_state.field_data.get('disease_seeds', [])
                     )
                 st.session_state.report_text = report_text
             
             if spray_btn:
-                with st.spinner("Generating spray advice..."):
+                with st.spinner("🤖 Generating spray advice..."):
                     report_text = get_spray_advice(
                         metrics=metrics,
                         crop_type=st.session_state.crop_type,
@@ -574,10 +575,10 @@ def main():
                     unsafe_allow_html=True
                 )
             else:
-                st.info("Click 'Generate Report' or 'Get Spray Advice' to see AI recommendations.")
+                st.info("💡 Click 'Generate Report' or 'Get Spray Advice' to see AI recommendations.")
         
         # Section 5: Feature Importance
-        with st.expander("ML Model Explainability - Feature Importance"):
+        with st.expander("📊 ML Model Explainability - Feature Importance"):
             if clf is not None:
                 importances = clf.feature_importances_
                 feature_names = ['NDVI', 'Red Intensity', 'Green Intensity', 'Texture Variance', 'Moisture Index']
@@ -600,7 +601,7 @@ def main():
                     margin=dict(l=20, r=20, t=40, b=40)
                 )
                 
-                st.plotly_chart(fig_feature, use_container_width=True)
+                st.plotly_chart(fig_feature, width='stretch')
                 
                 st.markdown("**How the model makes decisions:**")
                 for name, imp in zip(feature_names, importances):
