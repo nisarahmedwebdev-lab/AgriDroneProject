@@ -17,8 +17,7 @@ from datetime import datetime
 # Import modules
 from config import GRID_SIZE
 from core_logic import run_scan
-from llm_handler import init_gemini, generate_report, get_spray_advice
-
+from llm_handler import init_openai, generate_report, get_spray_advice
 # Page configuration
 st.set_page_config(
     page_title="AgriDrone - Smart Crop Monitoring",
@@ -539,12 +538,14 @@ def main():
         st.markdown("---")
         
         # API Status
-        api_key = os.getenv('GEMINI_API_KEY')
-        if api_key and init_gemini(api_key):
-            st.success("✅ Gemini API Ready")
+        # API Status - OpenAI
+        api_key = os.getenv('OPENAI_API_KEY')
+        if api_key and init_openai(api_key):
+            st.success("✅ OpenAI API Ready")
         else:
-            st.warning("")
-            st.caption("")
+            st.warning("⚠️ OpenAI API Not Configured")
+            st.caption("Add OPENAI_API_KEY to .env")
+            st.caption("Get key from: https://platform.openai.com/api-keys")
     
     # ─── MAIN CONTENT ──────────────────────────────────
     

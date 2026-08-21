@@ -1,363 +1,211 @@
-"""
-llm_handler.py - API handler for AI report generation
-Priority: Groq → OpenAI → Gemini
-"""
-
+# llm_handler.py - OpenAI Version
 import os
-import requests
-from typing import Dict, List, Optional
 from dotenv import load_dotenv
+from openai import OpenAI
+from datetime import datetime
 
 load_dotenv()
 
-# Try Groq first, then OpenAI, then Gemini
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Initialize OpenAI client
+client = None
 
-# Models
-GROQ_MODEL = "llama-3.3-70b-versatile"  # Free, fast
-OPENAI_MODEL = "gpt-3.5-turbo"
-GEMINI_MODEL = "gemini-1.5-flash"
-
-def init_gemini(api_key=None):
-    """Check if any API is configured."""
-    if GROQ_API_KEY and GROQ_API_KEY.startswith("gsk_"):
+def init_openai(api_key=None):
+    """Initialize OpenAI API"""
+    global client
+    
+    if api_key is None:
+        api_key = os.getenv('OPENAI_API_KEY')
+    
+    if not api_key:
+        return False
+    
+    try:
+        client = OpenAI(api_key=api_key)
+        # Test the connection
+        test_response = client.chat.completions.create(
+            messages=[{"role": "user", "content": "test"}],
+            model="gpt-3.5-turbo",
+            max_tokens=5,
+        )
         return True
-    if OPENAI_API_KEY and OPENAI_API_KEY.startswith("sk-"):
-        return True
-    if GEMINI_API_KEY:
-        return True
-    return False
+    except Exception as e:
+        print(f"Error initializing OpenAI: {e}")
+        return False
 
-def generate_report(metrics: Dict, crop_type: str, field_name: str = "Unknown Field", disease_seeds: Optional[List] = None) -> str:
-    """Generate report using available API."""
+def generate_report(metrics, crop_type, field_name="Unknown Field", disease_seeds=None):
+    """Generate report using OpenAI"""
+    global client
     
-    # Priority 1: Groq (Free)
-    if GROQ_API_KEY and GROQ_API_KEY.startswith("gsk_"):
-        return generate_report_groq(metrics, crop_type, field_name, disease_seeds)
-    
-    # Priority 2: OpenAI (Paid)
-    if OPENAI_API_KEY and OPENAI_API_KEY.startswith("sk-"):
-        return generate_report_openai(metrics, crop_type, field_name, disease_seeds)
-    
-    # Priority 3: Gemini (Free tier)
-    if GEMINI_API_KEY:
-        return generate_report_gemini(metrics, crop_type, field_name, disease_seeds)
-    
-    return "⚠️ No API key found. Please set GROQ_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in .env file."
-
-def get_spray_advice(metrics: Dict, crop_type: str, disease_seeds: Optional[List] = None) -> str:
-    """Get spray advice using available API."""
-    
-    # Priority 1: Groq (Free)
-    if GROQ_API_KEY and GROQ_API_KEY.startswith("gsk_"):
-        return get_spray_advice_groq(metrics, crop_type, disease_seeds)
-    
-    # Priority 2: OpenAI (Paid)
-    if OPENAI_API_KEY and OPENAI_API_KEY.startswith("sk-"):
-        return get_spray_advice_openai(metrics, crop_type, disease_seeds)
-    
-    # Priority 3: Gemini (Free tier)
-    if GEMINI_API_KEY:
-        return get_spray_advice_gemini(metrics, crop_type, disease_seeds)
-    
-    return "⚠️ No API key found. Please set GROQ_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in .env file."
-
-# ── Groq Functions (Free, Fast) ──────────────────────────────────
-
-def generate_report_groq(metrics: Dict, crop_type: str, field_name: str, disease_seeds: Optional[List] = None) -> str:
-    """Generate report using Groq API (Free)."""
-    healthy_count = metrics.get('healthy', 0)
-    early_count = metrics.get('early', 0)
-    severe_count = metrics.get('severe', 0)
-    total = metrics.get('total_cells', 1)
-    scanned = metrics.get('scanned', 0)
-    
-    healthy_pct = (healthy_count / total) * 100 if total > 0 else 0
-    early_pct = (early_count / total) * 100 if total > 0 else 0
-    severe_pct = (severe_count / total) * 100 if total > 0 else 0
-    
-    # Add seed information if provided
-    seed_info = ""
-    if disease_seeds:
-        seed_info = f"\nDisease Seeds: {len(disease_seeds)} initial infection points"
-        for i, seed in enumerate(disease_seeds[:3]):
-            if isinstance(seed, dict):
-                cell = seed.get('cell', [0, 0])
-                seed_type = seed.get('type', 'unknown')
-                seed_info += f"\n  - Seed {i+1}: Position ({cell[0]}, {cell[1]}), Type: {seed_type}"
-        if len(disease_seeds) > 3:
-            seed_info += f"\n  - ... and {len(disease_seeds) - 3} more seeds"
-    
-    prompt = f"""
-You are an agricultural AI assistant. Generate a concise field health report for a farmer.
+    try:
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            return get_fallback_report(metrics, crop_type, field_name)
+        
+        if client is None:
+            client = OpenAI(api_key=api_key)
+        
+        prompt = f"""
+You are an agricultural AI assistant. Generate a concise field health report.
 
 Field: {field_name}
 Crop: {crop_type}
-Scanned: {scanned} cells | Total: {total} cells
 
 Scan Results:
-  Healthy cells  : {healthy_count} ({healthy_pct:.1f}%)
-  Early disease  : {early_count}   ({early_pct:.1f}%)
-  Severe disease : {severe_count}  ({severe_pct:.1f}%){seed_info}
+  Healthy cells  : {metrics['healthy']} ({metrics['healthy_pct']:.1f}%)
+  Early disease  : {metrics['early']}   ({metrics['early_pct']:.1f}%)
+  Severe disease : {metrics['severe']}  ({metrics['severe_pct']:.1f}%)
+  Affected area  : {metrics['affected_pct']:.1f}%
 
 Write exactly 4 paragraphs:
-  1. Overall field health summary
-  2. Disease risk and likely spread pattern
-  3. Specific treatment recommendations
-  4. Next monitoring schedule
+1. Overall field health summary
+2. Disease risk and likely spread pattern
+3. Specific treatment recommendations
+4. Next monitoring schedule
 
 Use plain language. No bullet points. No markdown.
 """
-    try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": GROQ_MODEL,
-            "messages": [
+        
+        response = client.chat.completions.create(
+            messages=[
                 {"role": "system", "content": "You are an agricultural AI assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.5,
-            "max_tokens": 500
-        }
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+            model="gpt-3.5-turbo",
+            temperature=0.5,
+            max_tokens=600,
+        )
         
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            return f"⚠️ Groq Error ({response.status_code}): {response.text[:200]}"
-            
+        return response.choices[0].message.content
+        
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        return f"⚠️ OpenAI Error: {str(e)}\n\n{get_fallback_report(metrics, crop_type, field_name)}"
 
-def get_spray_advice_groq(metrics: Dict, crop_type: str, disease_seeds: Optional[List] = None) -> str:
-    """Get spray advice using Groq API (Free)."""
-    affected = metrics.get('early', 0) + metrics.get('severe', 0)
-    total = metrics.get('total_cells', 1)
-    affected_pct = (affected / total) * 100 if total > 0 else 0
+def get_spray_advice(metrics, crop_type, disease_seeds=None):
+    """Generate spray advice using OpenAI"""
+    global client
     
-    # Add seed information if provided
-    seed_info = ""
-    if disease_seeds:
-        early_seeds = sum(1 for s in disease_seeds if isinstance(s, dict) and s.get('type') == 'early')
-        severe_seeds = sum(1 for s in disease_seeds if isinstance(s, dict) and s.get('type') == 'severe')
-        if early_seeds or severe_seeds:
-            seed_info = f"\nInitial infection sources: {early_seeds} early, {severe_seeds} severe"
-    
-    prompt = f"""
-You are an agricultural AI assistant specializing in crop protection.
+    try:
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            return get_fallback_spray_advice(metrics, crop_type)
+        
+        if client is None:
+            client = OpenAI(api_key=api_key)
+        
+        prompt = f"""
+You are an agricultural AI assistant. Provide specific spray advice.
 
 Crop: {crop_type}
-Affected area: {affected_pct:.1f}% of the field
-Early disease: {metrics.get('early', 0)} cells
-Severe disease: {metrics.get('severe', 0)} cells{seed_info}
+Severe disease: {metrics['severe']} cells ({metrics['severe_pct']:.1f}%)
+Early disease: {metrics['early']} cells ({metrics['early_pct']:.1f}%)
+Affected area: {metrics['affected_pct']:.1f}%
 
-Provide a concise spray recommendation including:
-1. Recommended fungicide/pesticide type (based on crop type)
-2. Application method and timing
-3. Dosage guidance (general principles)
+Provide recommendations:
+1. Type of fungicide/pesticide needed
+2. Application rate per acre
+3. Best time to spray
 4. Safety precautions
 
-Keep it practical and actionable. 2-3 paragraphs. No markdown.
+Be specific and practical.
 """
-    try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": GROQ_MODEL,
-            "messages": [
-                {"role": "system", "content": "You are an agricultural crop protection expert."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.5,
-            "max_tokens": 400
-        }
-        response = requests.post(url, headers=headers, json=data, timeout=30)
         
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            return f"⚠️ Groq Error ({response.status_code}): {response.text[:200]}"
-            
-    except Exception as e:
-        return f"⚠️ Error: {str(e)}"
-
-# ── OpenAI Functions (Fallback) ──────────────────────────────────
-
-def generate_report_openai(metrics: Dict, crop_type: str, field_name: str, disease_seeds: Optional[List] = None) -> str:
-    """Generate report using OpenAI API (Paid)."""
-    if not OPENAI_API_KEY:
-        return "⚠️ OpenAI API key not configured."
-    
-    healthy_count = metrics.get('healthy', 0)
-    early_count = metrics.get('early', 0)
-    severe_count = metrics.get('severe', 0)
-    total = metrics.get('total_cells', 1)
-    scanned = metrics.get('scanned', 0)
-    
-    healthy_pct = (healthy_count / total) * 100 if total > 0 else 0
-    early_pct = (early_count / total) * 100 if total > 0 else 0
-    severe_pct = (severe_count / total) * 100 if total > 0 else 0
-    
-    prompt = f"""
-You are an agricultural AI assistant. Generate a concise field health report.
-
-Field: {field_name} | Crop: {crop_type}
-Scanned: {scanned} cells | Total: {total} cells
-Healthy: {healthy_count} ({healthy_pct:.1f}%)
-Early disease: {early_count} ({early_pct:.1f}%)
-Severe disease: {severe_count} ({severe_pct:.1f}%)
-
-Write 4 short paragraphs on: overall summary, disease risk, treatments, and monitoring schedule.
-"""
-    try:
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": OPENAI_MODEL,
-            "messages": [
+        response = client.chat.completions.create(
+            messages=[
                 {"role": "system", "content": "You are an agricultural AI assistant."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.5,
-            "max_tokens": 500
-        }
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            return f"⚠️ OpenAI Error ({response.status_code}): {response.text[:200]}"
-            
-    except Exception as e:
-        return f"⚠️ Error: {str(e)}"
-
-def get_spray_advice_openai(metrics: Dict, crop_type: str, disease_seeds: Optional[List] = None) -> str:
-    """Get spray advice using OpenAI API (Paid)."""
-    if not OPENAI_API_KEY:
-        return "⚠️ OpenAI API key not configured."
-    
-    affected = metrics.get('early', 0) + metrics.get('severe', 0)
-    total = metrics.get('total_cells', 1)
-    affected_pct = (affected / total) * 100 if total > 0 else 0
-    
-    prompt = f"""
-Crop: {crop_type}
-Affected: {affected_pct:.1f}% of the field
-Early disease: {metrics.get('early', 0)} cells
-Severe disease: {metrics.get('severe', 0)} cells
-
-Provide concise spray recommendation: type, method, dosage, safety. 2-3 paragraphs.
-"""
-    try:
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": OPENAI_MODEL,
-            "messages": [
-                {"role": "system", "content": "You are a crop protection expert."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.5,
-            "max_tokens": 400
-        }
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            return f"⚠️ OpenAI Error ({response.status_code}): {response.text[:200]}"
-            
-    except Exception as e:
-        return f"⚠️ Error: {str(e)}"
-
-# ── Gemini Functions (Fallback) ──────────────────────────────────
-
-def generate_report_gemini(metrics: Dict, crop_type: str, field_name: str, disease_seeds: Optional[List] = None) -> str:
-    """Generate report using Gemini API (Free tier)."""
-    try:
-        import google.generativeai as genai
-        
-        genai.configure(api_key=GEMINI_API_KEY)
-        
-        healthy_count = metrics.get('healthy', 0)
-        early_count = metrics.get('early', 0)
-        severe_count = metrics.get('severe', 0)
-        total = metrics.get('total_cells', 1)
-        scanned = metrics.get('scanned', 0)
-        
-        healthy_pct = (healthy_count / total) * 100 if total > 0 else 0
-        early_pct = (early_count / total) * 100 if total > 0 else 0
-        severe_pct = (severe_count / total) * 100 if total > 0 else 0
-        
-        prompt = f"""
-You are an agricultural AI assistant. Generate a concise field health report.
-
-Field: {field_name} | Crop: {crop_type}
-Scanned: {scanned} cells | Total: {total} cells
-Healthy: {healthy_count} ({healthy_pct:.1f}%)
-Early disease: {early_count} ({early_pct:.1f}%)
-Severe disease: {severe_count} ({severe_pct:.1f}%)
-
-Write 4 short paragraphs on: overall summary, disease risk, treatments, and monitoring schedule.
-"""
-        
-        model = genai.GenerativeModel(
-            "gemini-1.5-flash",
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.5
-            )
+            model="gpt-3.5-turbo",
+            temperature=0.5,
+            max_tokens=600,
         )
         
-        response = model.generate_content(prompt)
-        return response.text
+        return response.choices[0].message.content
         
     except Exception as e:
-        return f"⚠️ Gemini Error: {str(e)}"
+        return f"⚠️ OpenAI Error: {str(e)}\n\n{get_fallback_spray_advice(metrics, crop_type)}"
 
-def get_spray_advice_gemini(metrics: Dict, crop_type: str, disease_seeds: Optional[List] = None) -> str:
-    """Get spray advice using Gemini API (Free tier)."""
-    try:
-        import google.generativeai as genai
-        
-        genai.configure(api_key=GEMINI_API_KEY)
-        
-        affected = metrics.get('early', 0) + metrics.get('severe', 0)
-        total = metrics.get('total_cells', 1)
-        affected_pct = (affected / total) * 100 if total > 0 else 0
-        
-        prompt = f"""
-Crop: {crop_type}
-Affected: {affected_pct:.1f}% of the field
-Early disease: {metrics.get('early', 0)} cells
-Severe disease: {metrics.get('severe', 0)} cells
+def get_fallback_report(metrics, crop_type, field_name):
+    """Generate fallback report when API is not available"""
+    severity = "High" if metrics['severe_pct'] > 15 else "Medium" if metrics['severe_pct'] > 5 else "Low"
+    
+    return f"""
+================================================================================
+                              FIELD HEALTH REPORT
+================================================================================
 
-Provide concise spray recommendation: type, method, dosage, safety. 2-3 paragraphs.
+Field Name: {field_name}
+Crop Type: {crop_type}
+Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Severity Level: {severity}
+
+================================================================================
+                              SCAN RESULTS
+================================================================================
+
+Total Cells Scanned: {metrics['scanned']}/{metrics['total_cells']}
+
+Status Distribution:
+  ✅ Healthy        : {metrics['healthy']} ({metrics['healthy_pct']:.1f}%)
+  🟡 Early Disease  : {metrics['early']} ({metrics['early_pct']:.1f}%)
+  🔴 Severe Disease : {metrics['severe']} ({metrics['severe_pct']:.1f}%)
+
+================================================================================
+                              RECOMMENDATIONS
+================================================================================
+
+1. IMMEDIATE ACTIONS:
+   {'🔴 Apply fungicide to severe disease areas immediately' if metrics['severe'] > 50 else '🟡 Monitor severe disease areas daily'}
+   {'🟡 Apply preventive treatment to early disease areas' if metrics['early'] > 50 else '🟢 Continue regular monitoring'}
+
+2. SHORT-TERM (Next 3-5 days):
+   • {'Apply fungicide to early disease areas' if metrics['early'] > 30 else 'Monitor early disease areas'}
+   • Check moisture levels in {'severe disease' if metrics['severe'] > metrics['early'] else 'early disease'} areas
+   • {'Quarantine affected areas' if metrics['affected_pct'] > 20 else 'Mark affected zones for treatment'}
+
+3. LONG-TERM (Next 2 weeks):
+   • Schedule next drone scan in 5-7 days
+   • {'Consider crop rotation for next season' if metrics['affected_pct'] > 30 else 'Continue regular monitoring'}
+   • Keep records of all treatments applied
+
+================================================================================
 """
-        
-        model = genai.GenerativeModel(
-            "gemini-1.5-flash",
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.5
-            )
-        )
-        
-        response = model.generate_content(prompt)
-        return response.text
-        
-    except Exception as e:
-        return f"⚠️ Gemini Error: {str(e)}"
+
+def get_fallback_spray_advice(metrics, crop_type):
+    """Generate fallback spray advice"""
+    return f"""
+================================================================================
+                           SPRAY ADVICE RECOMMENDATIONS
+================================================================================
+
+Crop: {crop_type}
+Severity Level: {'High' if metrics['severe_pct'] > 15 else 'Medium' if metrics['severe_pct'] > 5 else 'Low'}
+
+================================================================================
+                           RECOMMENDED SPRAY SCHEDULE
+================================================================================
+
+1. FUNGICIDE/PESTICIDE TYPE:
+   {'Broad-spectrum fungicide' if metrics['severe_pct'] > 10 else 'Preventive fungicide'}
+
+2. APPLICATION RATE:
+   {'2-3 liters per acre (High concentration)' if metrics['severe_pct'] > 10 else '1-2 liters per acre (Standard concentration)'}
+
+3. BEST TIME TO SPRAY:
+   • Early morning (6:00 AM - 9:00 AM)
+   • Late afternoon (4:00 PM - 6:00 PM)
+   • Avoid spraying during windy conditions
+   • Avoid spraying before rain
+
+4. SAFETY PRECAUTIONS:
+   • Wear protective equipment (gloves, mask, goggles)
+   • Keep children and animals away during application
+   • Follow manufacturer's instructions
+   • Dispose of containers properly
+
+5. FOLLOW-UP:
+   • Check effectiveness after 3-5 days
+   • Apply second spray if needed after 7-10 days
+   • Monitor for any adverse effects
+
+================================================================================
+"""

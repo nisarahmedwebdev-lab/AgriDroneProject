@@ -1,56 +1,49 @@
-"""Test OpenAI API connection."""
+# test_openai.py
 import os
-import requests
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
-api_key = os.getenv("OPENAI_API_KEY")
-
-if not api_key:
-    print("❌ No OpenAI API key found in .env file")
-    print("Please add: OPENAI_API_KEY=sk-...")
-    exit()
-
-if not api_key.startswith("sk-"):
-    print("❌ Invalid API key format. Key should start with 'sk-'")
-    exit()
-
-print("⏳ Testing OpenAI API...")
-
-try:
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": "gpt-3.5-turbo",
-        "messages": [
-            {"role": "user", "content": "Say hello in 5 words"}
-        ],
-        "max_tokens": 20,
-        "temperature": 0.5
-    }
+def test_openai():
+    print("=" * 60)
+    print("Testing OpenAI API")
+    print("=" * 60)
     
-    response = requests.post(url, headers=headers, json=data, timeout=30)
+    api_key = os.getenv('OPENAI_API_KEY')
     
-    if response.status_code == 200:
-        result = response.json()
-        print("✅ OpenAI API works!")
-        print(f"Response: {result['choices'][0]['message']['content']}")
-        print("\n✅ You can now run: streamlit run app.py")
-    else:
-        error = response.json().get('error', {})
-        print(f"❌ Error: {response.status_code}")
-        print(f"Message: {error.get('message', 'Unknown error')}")
+    if not api_key:
+        print("❌ OPENAI_API_KEY not found in .env file")
+        print("\nPlease add OPENAI_API_KEY=your_key_here to .env")
+        return False
+    
+    print(f"✅ API Key found: {api_key[:10]}...{api_key[-5:]}")
+    
+    if not api_key.startswith('sk-'):
+        print("❌ API Key format is incorrect")
+        print("OpenAI keys should start with 'sk-'")
+        return False
+    
+    try:
+        client = OpenAI(api_key=api_key)
         
-        if response.status_code == 401:
-            print("\n💡 Tip: Your API key is invalid. Check it and try again.")
-        elif response.status_code == 429:
-            print("\n💡 Tip: You've exceeded your quota. Check your billing.")
-        elif response.status_code == 402:
-            print("\n💡 Tip: Insufficient credits. Add payment method.")
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Say 'Hello, AgriDrone is working!'"}
+            ],
+            model="gpt-3.5-turbo",
+            temperature=0.5,
+            max_tokens=50,
+        )
+        
+        print("\n✅ OpenAI API is working!")
+        print(f"Response: {response.choices[0].message.content}")
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        return False
 
-except Exception as e:
-    print(f"❌ Error: {e}")
+if __name__ == "__main__":
+    test_openai()
